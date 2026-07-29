@@ -73,6 +73,7 @@ class BatchResult:
     daily: pd.DataFrame
     summary: pd.DataFrame
     common_date_summary: pd.DataFrame
+    style_summary: pd.DataFrame
     failures: pd.DataFrame
 
 
@@ -170,9 +171,17 @@ def _summary_row(
 
     valid = valid.sort_values("date")
     latest = valid.iloc[-1]
+    latest_parity = float(latest["parity"])
+    if latest_parity < terms.debt_equity_blend_low:
+        bond_style = "debt"
+    elif latest_parity > terms.debt_equity_blend_high:
+        bond_style = "equity"
+    else:
+        bond_style = "balanced"
     return {
         "bond_code": spec.bond_code.strip().upper(),
         "stock_code": latest.get("stock_code"),
+        "bond_style": bond_style,
         "valid_days": int(len(valid)),
         "first_valid_date": valid["date"].iloc[0],
         "last_valid_date": latest["date"],
@@ -224,6 +233,12 @@ def _add_ranks(summary: pd.DataFrame) -> pd.DataFrame:
         method="min",
         ascending=False,
     )
+    result["rank_abs_latest_gap_pct"] = (
+        result["latest_gap_pct"].abs().rank(
+            method="min",
+            ascending=True,
+        )
+    )
     result["rank_gap_stability"] = result["gap_pct_std"].rank(
         method="min",
         ascending=True,
@@ -232,6 +247,43 @@ def _add_ranks(summary: pd.DataFrame) -> pd.DataFrame:
         ["rank_latest_gap_pct", "rank_mape"],
         kind="stable",
     ).reset_index(drop=True)
+
+
+def _style_summary(summary: pd.DataFrame) -> pd.DataFrame:
+    """Evaluate percentage model errors within bond-style groups."""
+
+    if summary.empty:
+        return pd.DataFrame()
+    return (
+        summary.groupby("bond_style", sort=False, dropna=False)
+        .agg(
+            bond_count=("bond_code", "nunique"),
+            mean_mape=("mape", "mean"),
+            median_mape=("mape", "median"),
+            mean_gap_pct=("mean_gap_pct", "mean"),
+            median_gap_pct=("median_gap_pct", "median"),
+            mean_latest_gap_pct=("latest_gap_pct", "mean"),
+            mean_gap_pct_std=("gap_pct_std", "mean"),
+        )
+        .reset_index()
+    )
+
+
+def _failure_row(code: str, exc: Exception) -> dict[str, object]:
+    """Preserve structured Wind diagnostics in failures.csv."""
+
+    return {
+        "bond_code": code,
+        "error_type": type(exc).__name__,
+        "error_message": str(exc),
+        "wind_request_type": getattr(exc, "request_type", ""),
+        "wind_request_code": getattr(exc, "wind_code", ""),
+        "wind_fields": getattr(exc, "wind_fields", ""),
+        "wind_error_code": getattr(exc, "wind_error_code", ""),
+        "response_columns": getattr(exc, "response_columns", ""),
+        "response_shape": getattr(exc, "response_shape", ""),
+        "response_preview": getattr(exc, "response_preview", ""),
+    }
 
 
 def _common_date_summary(
@@ -326,13 +378,7 @@ def run_batch_comparison(
             successful_specs.append(spec)
             terms_by_code[code] = terms
         except Exception as exc:
-            failures.append(
-                {
-                    "bond_code": code,
-                    "error_type": type(exc).__name__,
-                    "error_message": str(exc),
-                }
-            )
+            failures.append(_failure_row(code, exc))
 
     daily_all = (
         pd.concat(daily_tables, ignore_index=True)
@@ -351,14 +397,27 @@ def run_batch_comparison(
         successful_specs,
         terms_by_code,
     )
+    style_summary = _style_summary(summary)
     failure_frame = pd.DataFrame(
         failures,
-        columns=["bond_code", "error_type", "error_message"],
+        columns=[
+            "bond_code",
+            "error_type",
+            "error_message",
+            "wind_request_type",
+            "wind_request_code",
+            "wind_fields",
+            "wind_error_code",
+            "response_columns",
+            "response_shape",
+            "response_preview",
+        ],
     )
     return BatchResult(
         daily=daily_all,
         summary=summary,
         common_date_summary=common_summary,
+        style_summary=style_summary,
         failures=failure_frame,
     )
 
@@ -384,6 +443,11 @@ def save_batch_result(
     )
     result.common_date_summary.to_csv(
         output_dir / "comparison_summary_common_dates.csv",
+        index=False,
+        encoding="utf-8-sig",
+    )
+    result.style_summary.to_csv(
+        output_dir / "comparison_summary_by_style.csv",
         index=False,
         encoding="utf-8-sig",
     )

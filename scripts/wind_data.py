@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import Any, TypeAlias, cast
+from typing import Any, NoReturn, TypeAlias, cast
 
 import numpy as np
 import pandas as pd
@@ -29,6 +29,67 @@ CODE_GENERATOR_PLACEHOLDER = "__WIND_CODE_GENERATOR_REQUIRED__"
 # once, at the vendor boundary, so the rest of the project remains strictly
 # typed without scattering ``type: ignore`` comments.
 WindDataFrameResult: TypeAlias = tuple[int, pd.DataFrame | None]
+
+
+class WindRequestError(RuntimeError):
+    """Wind request failure with machine-readable diagnostics."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        request_type: str,
+        code: str,
+        fields: list[str],
+        error_code: int,
+        frame: pd.DataFrame | None,
+    ) -> None:
+        super().__init__(message)
+        self.request_type = request_type
+        self.wind_code = code
+        self.wind_fields = ",".join(fields)
+        self.wind_error_code = error_code
+        self.response_columns = (
+            ",".join(str(column) for column in frame.columns)
+            if frame is not None
+            else ""
+        )
+        self.response_shape = (
+            f"{frame.shape[0]}x{frame.shape[1]}"
+            if frame is not None
+            else ""
+        )
+        self.response_preview = (
+            frame.head(3).to_json(orient="split", date_format="iso")
+            if frame is not None and not frame.empty
+            else ""
+        )
+
+
+def _raise_wind_request_error(
+    request_type: str,
+    code: str,
+    field_names: list[str],
+    error_code: int,
+    frame: pd.DataFrame | None,
+    reason: str,
+) -> NoReturn:
+    """Raise a structured error while retaining the vendor response schema."""
+
+    columns = list(frame.columns) if frame is not None else None
+    shape = frame.shape if frame is not None else None
+    raise WindRequestError(
+        (
+            f"{request_type} {reason}: code={code}, fields={field_names}, "
+            f"error_code={error_code}, response_columns={columns}, "
+            f"response_shape={shape}"
+        ),
+        request_type=request_type,
+        code=code,
+        fields=field_names,
+        error_code=error_code,
+        frame=frame,
+    )
 
 
 @dataclass(frozen=True)
@@ -139,12 +200,13 @@ def _wind_wss(
     )
     error_code, frame = result
     if error_code != 0:
-        raise RuntimeError(
-            f"WSS取数失败：code={code}, fields={field_names}, "
-            f"error_code={error_code}, response={frame!r}"
+        _raise_wind_request_error(
+            "WSS", code, field_names, error_code, frame, "request failed"
         )
     if frame is None or frame.empty:
-        raise ValueError(f"WSS返回空数据：code={code}, fields={field_names}")
+        _raise_wind_request_error(
+            "WSS", code, field_names, error_code, frame, "returned no rows"
+        )
     return frame.iloc[0]
 
 
@@ -170,20 +232,36 @@ def _wind_wsd(
     )
     error_code, frame = result
     if error_code != 0:
-        raise RuntimeError(
-            f"WSD取数失败：code={code}, fields={field_names}, "
-            f"error_code={error_code}, response={frame!r}"
+        _raise_wind_request_error(
+            "WSD", code, field_names, error_code, frame, "request failed"
         )
     if frame is None or frame.empty:
-        raise ValueError(f"WSD返回空数据：code={code}, fields={field_names}")
+        _raise_wind_request_error(
+            "WSD", code, field_names, error_code, frame, "returned no rows"
+        )
 
-    result = frame.copy()
-    result.index = pd.to_datetime(result.index).normalize()
-    result = result.sort_index()
+    normalized = frame.copy()
+    normalized.index = pd.to_datetime(normalized.index).normalize()
+    normalized = normalized.sort_index()
     # Wind field casing may vary across functions/versions.  Normalize once so
     # downstream code does not contain repeated case-insensitive lookups.
-    result.columns = [str(column).upper() for column in result.columns]
-    return result
+    normalized.columns = [
+        str(column).upper() for column in normalized.columns
+    ]
+    missing = [
+        field for field in field_names
+        if field.upper() not in normalized.columns
+    ]
+    if missing:
+        _raise_wind_request_error(
+            "WSD",
+            code,
+            field_names,
+            error_code,
+            normalized,
+            f"response missing requested columns {missing}",
+        )
+    return normalized
 
 
 def _value_by_field(row: pd.Series, field_name: str) -> Any:

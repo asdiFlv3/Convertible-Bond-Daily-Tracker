@@ -110,6 +110,14 @@ The CSV contains the aligned market inputs, model inputs, theoretical price,
 no-call theoretical price, estimated call impact, and a `pricing_error` column
 for dates that could not be valued.
 
+Batch runs additionally write percentage-based cross-bond rankings,
+`comparison_summary_by_style.csv`, and `failures.csv`.  The style summary uses
+the latest conversion parity and the configured blend thresholds to classify
+each bond as `debt`, `balanced`, or `equity`.  Cross-bond fit rankings use MAPE,
+percentage gap, and percentage-gap stability rather than absolute RMB errors.
+Wind failures retain the request type, actual requested Wind code, fields,
+vendor error code, returned columns and a short response preview.
+
 
 ## Model overview
 
