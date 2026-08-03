@@ -22,13 +22,18 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from crr_model import FACE_VALUE, ManualModelTerms, crr_convertible_basic
+from crr_model import ManualModelTerms, price_convertible_with_terms
+from implied_volatility import ImpliedVolatilityResult, solve_implied_volatility
+from implied_volatility_backtest import load_terms_snapshot
 
 
 @dataclass(frozen=True)
 class DiagnosticConfig:
     input_csv: Path = Path(
         "output/classic/batch/all_9/daily_tracking_all.csv"
+    )
+    summary_csv: Path = Path(
+        "output/classic/batch/all_9/comparison_summary.csv"
     )
     output_dir: Path = Path("output/diagnostics/gap")
     volatility_multipliers: tuple[float, ...] = (
@@ -40,41 +45,22 @@ class DiagnosticConfig:
     )
     credit_spreads: tuple[float, ...] = (0.0, 0.005, 0.01, 0.015, 0.02)
     sensitivity_stride: int = 20
-    implied_volatility_lower: float = 0.01
-    implied_volatility_upper: float = 3.0
-    implied_volatility_iterations: int = 15
+    implied_volatility_grid: tuple[float, ...] = (
+        0.01,
+        0.10,
+        0.20,
+        0.40,
+        0.60,
+        1.00,
+        1.50,
+        2.00,
+        3.00,
+    )
+    implied_volatility_iterations: int = 24
+    implied_volatility_price_tolerance: float = 0.01
     implied_volatility_stride: int = 20
     reset_lookback_days: int = 30
     reset_price_ratios: tuple[float, ...] = (0.80, 0.85, 0.90)
-
-
-DEFAULT_PUT_PRICES = {
-    "123117.SZ": 103.0,
-    "123257.SZ": 108.0,
-    "118058.SH": 110.0,
-    "123258.SZ": 113.0,
-    "111022.SH": 113.0,
-    "123255.SZ": 110.0,
-    "118056.SH": 112.0,
-    "123263.SZ": 110.0,
-    "118062.SH": 112.0,
-}
-
-
-def _base_terms(code: str) -> ManualModelTerms:
-    """Return the assumptions used by the current batch example."""
-
-    return ManualModelTerms(
-        risk_free_rate=0.02,
-        dividend_yield=0.0,
-        credit_spread=0.01,
-        debt_equity_blend_low=70.0,
-        debt_equity_blend_high=130.0,
-        call_parity_trigger=130.0,
-        put_parity_trigger=70.0,
-        put_price=DEFAULT_PUT_PRICES[code],
-        tree_steps=200,
-    )
 
 
 def _no_call_price(
@@ -86,27 +72,19 @@ def _no_call_price(
 ) -> float:
     """Reprice one saved daily row with no reachable call threshold."""
 
-    return crr_convertible_basic(
+    return price_convertible_with_terms(
         stock_price=float(getattr(row, "stock_close")),
         conversion_price=float(getattr(row, "K")),
         sigma=sigma,
-        risk_free_rate=terms.risk_free_rate,
         maturity_years=float(getattr(row, "T")),
-        dividend_yield=terms.dividend_yield,
         maturity_redemption_price=float(
             getattr(row, "maturity_redemption_price")
         ),
         coupon_rate=float(getattr(row, "coupon_used")),
-        credit_spread=terms.credit_spread,
-        blend_low=terms.debt_equity_blend_low,
-        blend_high=terms.debt_equity_blend_high,
         conversion_wait_years=float(getattr(row, "t_conv_used")),
         put_wait_years=float(getattr(row, "t_put_used")),
-        steps=terms.tree_steps,
-        call_parity_trigger=float("inf"),
-        put_parity_trigger=terms.put_parity_trigger,
-        face_value=FACE_VALUE,
-        put_price=terms.put_price,
+        terms=terms,
+        with_call=False,
         diagnostics=diagnostics,
     )
 
@@ -115,24 +93,16 @@ def _implied_no_call_volatility(
     row: object,
     terms: ManualModelTerms,
     config: DiagnosticConfig,
-) -> float:
-    """Invert the no-call model, returning NaN when price is out of range."""
+) -> ImpliedVolatilityResult:
+    """Invert the no-call model and preserve numerical failure diagnostics."""
 
-    target = float(getattr(row, "bond_close"))
-    low = config.implied_volatility_lower
-    high = config.implied_volatility_upper
-    low_price = _no_call_price(row, terms, sigma=low)
-    high_price = _no_call_price(row, terms, sigma=high)
-    if not low_price <= target <= high_price:
-        return np.nan
-    for _ in range(config.implied_volatility_iterations):
-        middle = (low + high) / 2
-        middle_price = _no_call_price(row, terms, sigma=middle)
-        if middle_price < target:
-            low = middle
-        else:
-            high = middle
-    return (low + high) / 2
+    return solve_implied_volatility(
+        lambda sigma: _no_call_price(row, terms, sigma=sigma),
+        float(getattr(row, "bond_close")),
+        sigma_grid=config.implied_volatility_grid,
+        max_iterations=config.implied_volatility_iterations,
+        price_tolerance=config.implied_volatility_price_tolerance,
+    )
 
 
 def _valid_daily(daily: pd.DataFrame) -> pd.DataFrame:
@@ -159,6 +129,7 @@ def _valid_daily(daily: pd.DataFrame) -> pd.DataFrame:
 
 def run_diagnostics(
     daily: pd.DataFrame,
+    terms_by_code: dict[str, ManualModelTerms],
     config: DiagnosticConfig,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Return sensitivity summary, implied-volatility rows and reset metrics."""
@@ -170,9 +141,9 @@ def run_diagnostics(
 
     for code, group in valid.groupby("bond_code", sort=False):
         code = str(code)
-        if code not in DEFAULT_PUT_PRICES:
-            raise KeyError(f"put price is not configured for {code}")
-        base = _base_terms(code)
+        if code not in terms_by_code:
+            raise KeyError(f"terms snapshot missing for {code}")
+        base = terms_by_code[code]
         records = list(group.itertuples(index=False))
         sensitivity_records = records[:: config.sensitivity_stride]
         sensitivity_market = group["bond_close"].to_numpy(dtype=float)[
@@ -255,7 +226,8 @@ def run_diagnostics(
         # weekly-like stride keeps the offline run light while preserving the
         # full daily sample for the cheaper sensitivity grids.
         for row in records[:: config.implied_volatility_stride]:
-            implied = _implied_no_call_volatility(row, base, config)
+            implied_result = _implied_no_call_volatility(row, base, config)
+            implied = implied_result.implied_sigma
             historical = float(row.sigma_used)
             implied_rows.append(
                 {
@@ -264,6 +236,11 @@ def run_diagnostics(
                     "stock_code": row.stock_code,
                     "historical_sigma": historical,
                     "implied_no_call_sigma": implied,
+                    "implied_success": implied_result.success,
+                    "implied_failure_reason": (
+                        "" if implied_result.success else implied_result.reason
+                    ),
+                    "implied_price_residual": implied_result.residual,
                     "implied_to_historical": (
                         implied / historical if np.isfinite(implied) else np.nan
                     ),
@@ -325,7 +302,13 @@ def summarize_reset_proximity(reset: pd.DataFrame) -> pd.DataFrame:
 def main() -> None:
     config = DiagnosticConfig()
     daily = pd.read_csv(config.input_csv)
-    sensitivity, implied, reset, structure = run_diagnostics(daily, config)
+    summary = pd.read_csv(config.summary_csv)
+    terms_by_code = load_terms_snapshot(summary)
+    sensitivity, implied, reset, structure = run_diagnostics(
+        daily,
+        terms_by_code,
+        config,
+    )
     config.output_dir.mkdir(parents=True, exist_ok=True)
     sensitivity.to_csv(
         config.output_dir / "parameter_sensitivity.csv",

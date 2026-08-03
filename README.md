@@ -122,6 +122,34 @@ exercise diagnostics, and generic downward-reset trigger proximity to
 `output/diagnostics/gap/`.  The sensitivity grids are sampled across the full
 date range to keep this research-only run separate from normal batch cost.
 
+To test whether a lagged market-implied volatility input improves genuinely
+out-of-sample pricing, run:
+
+```text
+python scripts/implied_volatility_backtest.py
+```
+
+This is also an offline run and does not call Wind.  By default, it inverts
+call and no-call model prices separately every fifth usable trading day.  A
+calibration is available only from the following trading day, expires after
+ten trading days, and feeds three forecasts: the latest calibration, the
+median of the four most recent calibrations, and a 50% shrinkage of that median
+toward historical volatility.  The first 60% of the combined trading calendar
+is used for model selection and the final 40% for validation, giving every
+bond one common cutoff and the same validation market period.  Candidates must
+meet 80% coverage, beat their matching historical-volatility baseline during
+selection, and are compared on one common set of dates within the call or
+no-call engine using percentage errors.  All bonds share one calendar
+validation cutoff; bond style is frozen using conversion parity observed at
+the end of the selection period.
+
+Results are written to `output/diagnostics/implied_volatility/`, including
+daily forecasts, solver failures, per-bond calibration/validation metrics,
+selected-model validation results, bond-style summaries, and the complete
+configuration snapshot.  Same-day implied volatility remains a diagnostic,
+not forecast evidence; only the lagged columns should be used to judge whether
+the volatility input addresses the persistent gap.
+
 Batch runs additionally write percentage-based cross-bond rankings,
 `comparison_summary_by_style.csv`, and `failures.csv`.  The style summary uses
 the latest conversion parity and the configured blend thresholds to classify

@@ -251,3 +251,44 @@ def crr_convertible_basic(
             }
         )
     return float(value[0])
+
+
+def price_convertible_with_terms(
+    *,
+    stock_price: float,
+    conversion_price: float,
+    sigma: float,
+    maturity_years: float,
+    maturity_redemption_price: float,
+    coupon_rate: float,
+    conversion_wait_years: float,
+    put_wait_years: float,
+    terms: ManualModelTerms,
+    with_call: bool = True,
+    diagnostics: dict[str, float | bool] | None = None,
+) -> float:
+    """Price normalized daily inputs using one shared terms object."""
+
+    return crr_convertible_basic(
+        stock_price=stock_price,
+        conversion_price=conversion_price,
+        sigma=sigma,
+        risk_free_rate=terms.risk_free_rate,
+        maturity_years=maturity_years,
+        dividend_yield=terms.dividend_yield,
+        maturity_redemption_price=maturity_redemption_price,
+        coupon_rate=coupon_rate,
+        credit_spread=terms.credit_spread,
+        blend_low=terms.debt_equity_blend_low,
+        blend_high=terms.debt_equity_blend_high,
+        conversion_wait_years=conversion_wait_years,
+        put_wait_years=put_wait_years,
+        steps=terms.tree_steps,
+        call_parity_trigger=(
+            terms.call_parity_trigger if with_call else float("inf")
+        ),
+        put_parity_trigger=terms.put_parity_trigger,
+        face_value=FACE_VALUE,
+        put_price=terms.put_price,
+        diagnostics=diagnostics,
+    )

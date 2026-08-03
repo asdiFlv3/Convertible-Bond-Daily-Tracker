@@ -17,8 +17,8 @@ import pandas as pd
 from crr_model import (
     FACE_VALUE,
     ManualModelTerms,
-    crr_convertible_basic,
     parity,
+    price_convertible_with_terms,
 )
 from wind_data import (
     TrackingConfig,
@@ -174,44 +174,34 @@ def build_daily_tracking_table(
                 "maturity_redemption_price",
             )
 
-            def price_with_call_threshold(
-                call_parity_trigger: float,
+            def price_with_call_status(
+                with_call: bool,
                 diagnostics: dict[str, float | bool] | None = None,
             ) -> float:
                 """Price this already-normalized row with one call threshold."""
 
-                return crr_convertible_basic(
+                return price_convertible_with_terms(
                     stock_price=stock_close,
                     conversion_price=conversion_price,
                     sigma=sigma_used,
-                    risk_free_rate=manual_terms.risk_free_rate,
                     maturity_years=maturity_years,
-                    dividend_yield=manual_terms.dividend_yield,
                     maturity_redemption_price=maturity_redemption_price,
                     coupon_rate=coupon_used,
-                    credit_spread=manual_terms.credit_spread,
-                    blend_low=manual_terms.debt_equity_blend_low,
-                    blend_high=manual_terms.debt_equity_blend_high,
                     conversion_wait_years=conversion_wait_years,
                     put_wait_years=put_wait_years,
-                    steps=manual_terms.tree_steps,
-                    call_parity_trigger=call_parity_trigger,
-                    put_parity_trigger=manual_terms.put_parity_trigger,
-                    face_value=FACE_VALUE,
-                    put_price=manual_terms.put_price,
+                    terms=manual_terms,
+                    with_call=with_call,
                     diagnostics=diagnostics,
                 )
 
-            price = price_with_call_threshold(
-                manual_terms.call_parity_trigger
-            )
+            price = price_with_call_status(True)
 
             # Re-price the same row with an unreachable call threshold.  The
             # difference isolates the impact of the model's call cutoff while
             # holding all market data and other assumptions constant.
             diagnostic_row: dict[str, float | bool] = {}
-            price_no_call = price_with_call_threshold(
-                float("inf"),
+            price_no_call = price_with_call_status(
+                False,
                 diagnostic_row,
             )
             model_prices.append(price)

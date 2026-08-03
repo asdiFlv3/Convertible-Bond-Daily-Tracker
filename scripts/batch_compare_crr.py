@@ -211,6 +211,8 @@ def _summary_row(
         "risk_free_rate": terms.risk_free_rate,
         "dividend_yield": terms.dividend_yield,
         "credit_spread": terms.credit_spread,
+        "debt_equity_blend_low": terms.debt_equity_blend_low,
+        "debt_equity_blend_high": terms.debt_equity_blend_high,
         "tree_steps": terms.tree_steps,
     }
 
