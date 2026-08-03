@@ -1,9 +1,17 @@
+"""Vendor-style examples of the main WindPy request families.
+
+The file is retained as a manual reference and performs live requests when
+executed. Production data access is centralized in ``scripts/wind_data.py``.
+"""
+
 from WindPy import w
 
 w.start()
 # 命令如何写可以用命令生成器来辅助完成
 # 定义打印输出函数，用来展示数据使用
 def printpy(outdata):
+    """Print a legacy WindData response in row order."""
+
     if outdata.ErrorCode!=0:
         print('error code:'+str(outdata.ErrorCode)+'\n')
         return()

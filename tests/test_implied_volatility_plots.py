@@ -18,6 +18,8 @@ import implied_volatility_plots as plots
 
 
 class ImpliedVolatilityPlotTests(unittest.TestCase):
+    """Verify selection grouping and non-empty small-multiple layouts."""
+
     def test_validation_groups_use_frozen_selection_style(self) -> None:
         selected = pd.DataFrame(
             [

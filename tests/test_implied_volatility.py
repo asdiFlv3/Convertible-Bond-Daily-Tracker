@@ -1,3 +1,5 @@
+"""Unit tests for robust implied-volatility bracketing and convergence."""
+
 from __future__ import annotations
 
 import sys
@@ -11,6 +13,8 @@ from implied_volatility import solve_implied_volatility
 
 
 class ImpliedVolatilitySolverTests(unittest.TestCase):
+    """Cover successful roots and the solver's guarded failure modes."""
+
     def test_finds_unique_root(self) -> None:
         result = solve_implied_volatility(
             lambda sigma: 100 + 10 * sigma,
@@ -26,6 +30,8 @@ class ImpliedVolatilitySolverTests(unittest.TestCase):
 
     def test_skips_invalid_grid_points(self) -> None:
         def price(sigma: float) -> float:
+            """Mimic CRR grid points that are invalid at very low volatility."""
+
             if sigma < 0.2:
                 raise ValueError("invalid CRR probability")
             return 100 + 10 * sigma

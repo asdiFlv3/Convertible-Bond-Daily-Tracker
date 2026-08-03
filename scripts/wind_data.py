@@ -45,6 +45,8 @@ class WindRequestError(RuntimeError):
         error_code: int,
         frame: pd.DataFrame | None,
     ) -> None:
+        """Store request metadata alongside the human-readable error."""
+
         super().__init__(message)
         self.request_type = request_type
         self.wind_code = code
@@ -462,8 +464,10 @@ def load_wind_daily_inputs(
     # information into any volatility estimate.
     stock_start = start - pd.Timedelta(days=420)
 
-    # Bond close is not adjusted.  Stock close is forward-adjusted solely for
-    # return/volatility estimation, avoiding artificial corporate-action jumps.
+    # Bond and stock closes used for valuation are not adjusted.  A separate
+    # forward-adjusted stock series is loaded solely for return/volatility
+    # estimation; mixing adjusted stock prices with an unadjusted historical
+    # conversion price would put parity on inconsistent scales.
     bond_market = _wind_wsd(
         bond_code,
         ["close"],
@@ -476,11 +480,18 @@ def load_wind_daily_inputs(
         ["close"],
         stock_start,
         end,
+        "Period=D;Days=Trading;Fill=Blank",
+    ).rename(columns={"CLOSE": "stock_close"})
+    stock_volatility_market = _wind_wsd(
+        stock_code,
+        ["close"],
+        stock_start,
+        end,
         (
             "Period=D;Days=Trading;Fill=Blank;"
             f"PriceAdj={tracking.price_adjustment}"
         ),
-    ).rename(columns={"CLOSE": "stock_close"})
+    ).rename(columns={"CLOSE": "stock_close_adjusted"})
 
     # ``Fill=Previous`` is appropriate for terms that remain legally effective
     # until a new value takes effect.  It is intentionally not used for prices
@@ -512,22 +523,28 @@ def load_wind_daily_inputs(
     coupon_unit_multiplier = 0.01
     coupon_rate = coupon_rate * coupon_unit_multiplier
 
-    stock_market["log_return"] = np.log(
-        stock_market["stock_close"]
-        / stock_market["stock_close"].shift(1)
+    stock_volatility_market["log_return"] = np.log(
+        stock_volatility_market["stock_close_adjusted"]
+        / stock_volatility_market["stock_close_adjusted"].shift(1)
     )
     for window in (20, 60, 120, 252):
-        stock_market[f"vol_{window}d"] = (
-            stock_market["log_return"]
+        stock_volatility_market[f"vol_{window}d"] = (
+            stock_volatility_market["log_return"]
             .rolling(window, min_periods=window)
             .std(ddof=1)
             * np.sqrt(tracking.annualization_days)
         )
 
-    # An inner join is conservative: a pricing row is created only when all
-    # four sources describe the same normalized trade date.
+    # An inner join is conservative: a pricing row is created only when every
+    # source describes the same normalized trade date.
     daily = pd.concat(
-        [bond_market, stock_market, conversion_price, coupon_rate],
+        [
+            bond_market,
+            stock_market,
+            stock_volatility_market,
+            conversion_price,
+            coupon_rate,
+        ],
         axis=1,
         join="inner",
     )

@@ -1,3 +1,5 @@
+"""Regression tests for the public CRR terms adapter and input guards."""
+
 from __future__ import annotations
 
 import sys
@@ -16,6 +18,35 @@ from crr_model import (
 
 
 class ConvertiblePricingAdapterTests(unittest.TestCase):
+    """Exercise adapter parity, option precedence, and validation boundaries."""
+
+    @staticmethod
+    def _direct_price(**overrides: object) -> float:
+        """Price a minimal one-step fixture with optional input overrides."""
+
+        inputs: dict[str, object] = {
+            "stock_price": 100.0,
+            "conversion_price": 100.0,
+            "sigma": 1.0,
+            "risk_free_rate": 0.0,
+            "maturity_years": 1.0,
+            "dividend_yield": 0.2,
+            "maturity_redemption_price": 1.0,
+            "coupon_rate": 0.0,
+            "credit_spread": 0.0,
+            "blend_low": 70.0,
+            "blend_high": 130.0,
+            "conversion_wait_years": 0.0,
+            "put_wait_years": 0.0,
+            "steps": 1,
+            "call_parity_trigger": float("inf"),
+            "put_parity_trigger": 200.0,
+            "face_value": FACE_VALUE,
+            "put_price": 50.0,
+        }
+        inputs.update(overrides)
+        return crr_convertible_basic(**inputs)  # type: ignore[arg-type]
+
     def test_adapter_matches_direct_crr_call_for_both_call_settings(self) -> None:
         terms = ManualModelTerms(
             risk_free_rate=0.02,
@@ -71,6 +102,24 @@ class ConvertiblePricingAdapterTests(unittest.TestCase):
             )
 
             self.assertAlmostEqual(adapted, direct, places=12)
+
+    def test_put_floor_preserves_a_better_conversion_value(self) -> None:
+        price = self._direct_price()
+
+        self.assertAlmostEqual(price, 100.0, places=12)
+
+    def test_steps_must_be_a_positive_integer(self) -> None:
+        for invalid_steps in (0, -1, 0.5, True):
+            with self.subTest(steps=invalid_steps):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "steps must be a positive integer",
+                ):
+                    self._direct_price(steps=invalid_steps)
+
+    def test_non_finite_positive_input_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "sigma"):
+            self._direct_price(sigma=float("nan"))
 
 
 if __name__ == "__main__":

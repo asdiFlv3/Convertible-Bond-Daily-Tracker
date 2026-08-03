@@ -46,6 +46,8 @@ ORIGINAL_SAMPLE_MARKER = "\N{DAGGER}"
 
 @dataclass(frozen=True)
 class PlotConfig:
+    """Locations of saved analysis tables and generated figure files."""
+
     classic_daily_csv: Path = Path(
         "output/classic/batch/all_9/daily_tracking_all.csv"
     )
@@ -81,16 +83,22 @@ def _require_columns(
     columns: list[str],
     source: str,
 ) -> None:
+    """Raise a source-aware error when a plotting input lacks columns."""
+
     missing = [column for column in columns if column not in frame.columns]
     if missing:
         raise KeyError(f"{source} missing columns: {missing}")
 
 
 def _is_true(value: object) -> bool:
+    """Interpret boolean values that may have round-tripped through CSV."""
+
     return str(value).strip().lower() == "true"
 
 
 def _style_axis(axis: plt.Axes) -> None:
+    """Apply the common unobtrusive grid and spine styling to an axis."""
+
     axis.grid(axis="y", color=GRID_COLOR, linewidth=0.8, alpha=0.75)
     axis.spines["top"].set_visible(False)
     axis.spines["right"].set_visible(False)
@@ -98,12 +106,16 @@ def _style_axis(axis: plt.Axes) -> None:
 
 
 def _format_date_axis(axis: plt.Axes) -> None:
+    """Use concise, automatically spaced calendar labels on an axis."""
+
     locator = mdates.AutoDateLocator(minticks=4, maxticks=7)
     axis.xaxis.set_major_locator(locator)
     axis.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
 
 
 def _save_figure(figure: plt.Figure, path: Path) -> None:
+    """Create the destination, save a consistent PNG, and release memory."""
+
     path.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(
         path,
@@ -125,6 +137,8 @@ def _load_inputs(
     pd.DataFrame,
     pd.DataFrame,
 ]:
+    """Load and validate every saved table needed by the figure suite."""
+
     classic_daily = pd.read_csv(config.classic_daily_csv)
     classic_summary = pd.read_csv(config.classic_summary_csv)
     original_summary = pd.read_csv(config.original_four_summary_csv)
@@ -220,6 +234,8 @@ def _style_codes(
     summary: pd.DataFrame,
     style: str,
 ) -> list[str]:
+    """Return sorted bond codes in one end-of-sample style group."""
+
     return (
         summary.loc[summary["bond_style"].eq(style), "bond_code"]
         .astype(str)
@@ -335,6 +351,8 @@ def save_original_group_price_chart(
 
 
 def _subplot_shape(count: int) -> tuple[int, int]:
+    """Choose a compact two-column grid for a number of bond panels."""
+
     if count <= 2:
         return 1, count
     return int(np.ceil(count / 2)), 2
@@ -373,6 +391,8 @@ def _small_multiple_figure(
 def _validation_lookup(
     summary: pd.DataFrame,
 ) -> pd.DataFrame:
+    """Index no-call validation metrics for bond/model lookup."""
+
     return summary.loc[
         summary["segment"].eq("validation")
         & summary["engine"].eq("no_call")
@@ -380,6 +400,8 @@ def _validation_lookup(
 
 
 def _selection_lookup(selected: pd.DataFrame) -> pd.DataFrame:
+    """Index no-call model-selection outcomes by bond code."""
+
     return selected.loc[selected["engine"].eq("no_call")].set_index(
         "bond_code"
     )
@@ -389,6 +411,8 @@ def _selection_style_codes(
     selected: pd.DataFrame,
     style: str,
 ) -> list[str]:
+    """Return bonds grouped by style frozen at the selection cutoff."""
+
     return (
         selected.loc[
             selected["engine"].eq("no_call")
@@ -402,6 +426,8 @@ def _selection_style_codes(
 
 
 def _qualification_note(row: pd.Series | None) -> str:
+    """Explain selection or validation eligibility in chart-friendly text."""
+
     if row is None:
         return "no selection record"
     if not _is_true(row.get("selection_passed")):
@@ -817,6 +843,8 @@ def save_strategy_tradeoff_chart(
 
 
 def generate_plots(config: PlotConfig) -> list[Path]:
+    """Generate the complete figure suite and return paths in display order."""
+
     (
         classic_daily,
         classic_summary,
@@ -871,6 +899,8 @@ def generate_plots(config: PlotConfig) -> list[Path]:
 
 
 def main() -> None:
+    """Generate figures from default paths and print their destinations."""
+
     paths = generate_plots(PlotConfig())
     print("Saved implied-volatility figures:")
     for path in paths:

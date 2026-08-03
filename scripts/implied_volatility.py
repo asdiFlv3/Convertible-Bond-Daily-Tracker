@@ -16,6 +16,8 @@ import numpy as np
 
 @dataclass(frozen=True)
 class ImpliedVolatilityResult:
+    """One solver outcome, including the root bracket and failure evidence."""
+
     implied_sigma: float
     success: bool
     reason: str
@@ -52,6 +54,8 @@ def _result(
     monotonic: bool = False,
     bracket_count: int = 0,
 ) -> ImpliedVolatilityResult:
+    """Build a consistently populated solver result and calculate residual."""
+
     residual = (
         model_price - target_price
         if np.isfinite(model_price)
@@ -126,6 +130,8 @@ def solve_implied_volatility(
             # leaves [0, 1].  Remaining valid points can still define a root.
             continue
 
+    # Bracketing uses only finite samples, but diagnostics retain how much of
+    # the requested grid was actually priceable by the underlying model.
     valid = np.isfinite(prices)
     valid_count = int(valid.sum())
     if valid_count < 2:
@@ -139,6 +145,8 @@ def solve_implied_volatility(
     valid_prices = prices[valid]
     grid_min_price = float(valid_prices.min())
     grid_max_price = float(valid_prices.max())
+    # A unique IV is meaningful only on a non-decreasing price curve. Small
+    # downward moves inside the price tolerance are treated as numerical noise.
     monotonic = bool(np.all(np.diff(valid_prices) >= -price_tolerance))
     errors = valid_prices - target_price
     exact = np.flatnonzero(np.abs(errors) <= price_tolerance)

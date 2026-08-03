@@ -120,20 +120,59 @@ def crr_convertible_basic(
       valuation date is used.
     """
 
-    positive_inputs = (
-        stock_price,
-        conversion_price,
-        sigma,
-        maturity_years,
+    positive_inputs = {
+        "stock_price": stock_price,
+        "conversion_price": conversion_price,
+        "sigma": sigma,
+        "maturity_years": maturity_years,
+        "face_value": face_value,
+        "maturity_redemption_price": maturity_redemption_price,
+        "put_parity_trigger": put_parity_trigger,
+        "put_price": put_price,
+    }
+    invalid_positive = [
+        name
+        for name, value in positive_inputs.items()
+        if not np.isfinite(value) or value <= 0
+    ]
+    if invalid_positive:
+        raise ValueError(
+            "inputs must be finite and positive: "
+            f"{', '.join(invalid_positive)}"
+        )
+    if isinstance(steps, (bool, np.bool_)) or not isinstance(
         steps,
-        face_value,
-    )
-    if min(positive_inputs) <= 0:
-        raise ValueError("S、K、sigma、T、n、face_value必须为正数")
+        (int, np.integer),
+    ):
+        raise ValueError("steps must be a positive integer")
+    if steps <= 0:
+        raise ValueError("steps must be a positive integer")
+    if not np.isfinite(blend_low) or not np.isfinite(blend_high):
+        raise ValueError("blend_low and blend_high must be finite")
     if blend_high <= blend_low:
-        raise ValueError("blend_high必须大于blend_low")
-    if coupon_rate < 0:
-        raise ValueError("coupon_rate不能为负数")
+        raise ValueError("blend_high must be greater than blend_low")
+    if not np.isfinite(coupon_rate) or coupon_rate < 0:
+        raise ValueError("coupon_rate must be finite and non-negative")
+    finite_inputs = {
+        "risk_free_rate": risk_free_rate,
+        "dividend_yield": dividend_yield,
+        "credit_spread": credit_spread,
+        "conversion_wait_years": conversion_wait_years,
+        "put_wait_years": put_wait_years,
+    }
+    invalid_finite = [
+        name
+        for name, value in finite_inputs.items()
+        if not np.isfinite(value)
+    ]
+    if invalid_finite:
+        raise ValueError(
+            f"inputs must be finite: {', '.join(invalid_finite)}"
+        )
+    if conversion_wait_years < 0 or put_wait_years < 0:
+        raise ValueError("exercise waiting times must be non-negative")
+    if np.isnan(call_parity_trigger) or call_parity_trigger <= 0:
+        raise ValueError("call_parity_trigger must be positive and not NaN")
 
     steps = int(steps)
     dt = maturity_years / steps
@@ -148,7 +187,8 @@ def crr_convertible_basic(
     ) / (up - down)
     if not 0 <= probability <= 1:
         raise ValueError(
-            f"CRR风险中性概率越界：p={probability:.6f}；请增加步数或检查参数"
+            f"CRR risk-neutral probability is outside [0, 1]: "
+            f"p={probability:.6f}; increase steps or check inputs"
         )
 
     # This evenly spread coupon is inherited from the notebook.  A production
@@ -228,7 +268,7 @@ def crr_convertible_basic(
             # not represented by this one-layer condition.
             hit_put = current_parity < put_parity_trigger
             value[hit_put] = np.maximum(
-                continuation[hit_put],
+                value[hit_put],
                 put_price,
             )
 

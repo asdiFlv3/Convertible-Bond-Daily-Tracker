@@ -29,6 +29,8 @@ from implied_volatility_backtest import load_terms_snapshot
 
 @dataclass(frozen=True)
 class DiagnosticConfig:
+    """Input paths, sampling frequency, and parameter grids for diagnostics."""
+
     input_csv: Path = Path(
         "output/classic/batch/all_9/daily_tracking_all.csv"
     )
@@ -106,6 +108,8 @@ def _implied_no_call_volatility(
 
 
 def _valid_daily(daily: pd.DataFrame) -> pd.DataFrame:
+    """Validate, clean, and order the saved daily rows used by diagnostics."""
+
     required = [
         "bond_code",
         "date",
@@ -300,6 +304,8 @@ def summarize_reset_proximity(reset: pd.DataFrame) -> pd.DataFrame:
 
 
 def main() -> None:
+    """Run the default offline diagnostics and save all result tables."""
+
     config = DiagnosticConfig()
     daily = pd.read_csv(config.input_csv)
     summary = pd.read_csv(config.summary_csv)

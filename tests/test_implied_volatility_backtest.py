@@ -1,3 +1,5 @@
+"""Regression tests for leakage-safe implied-volatility backtesting."""
+
 from __future__ import annotations
 
 import sys
@@ -17,6 +19,8 @@ from implied_volatility import ImpliedVolatilityResult
 
 
 def _terms() -> ManualModelTerms:
+    """Return compact deterministic model terms shared by test fixtures."""
+
     return ManualModelTerms(
         risk_free_rate=0.02,
         dividend_yield=0.0,
@@ -31,6 +35,8 @@ def _terms() -> ManualModelTerms:
 
 
 def _daily(code: str, start_price: float, days: int = 6) -> pd.DataFrame:
+    """Build one complete synthetic bond history for backtest tests."""
+
     positions = np.arange(days, dtype=float)
     return pd.DataFrame(
         {
@@ -53,6 +59,8 @@ def _daily(code: str, start_price: float, days: int = 6) -> pd.DataFrame:
 
 
 def _result(sigma: float) -> ImpliedVolatilityResult:
+    """Build a successful deterministic IV solver response."""
+
     return ImpliedVolatilityResult(
         implied_sigma=sigma,
         success=True,
@@ -80,6 +88,8 @@ def _fake_solve(
     *,
     with_call: bool,
 ) -> ImpliedVolatilityResult:
+    """Replace numerical inversion with a predictable row-dependent result."""
+
     del terms, config
     offset = 0.0 if with_call else 0.5
     return _result(float(getattr(row, "bond_close")) / 100 + offset)
@@ -92,12 +102,18 @@ def _fake_price(
     *,
     with_call: bool,
 ) -> float:
+    """Replace CRR pricing with an engine-specific deterministic value."""
+
     del row, terms
     return float(sigma) + (10.0 if with_call else 20.0)
 
 
 class ImpliedVolatilityBacktestTests(unittest.TestCase):
+    """Verify chronology, isolation, coverage, and common-sample metrics."""
+
     def setUp(self) -> None:
+        """Use short calibration windows so small fixtures exercise expiry."""
+
         self.config = iv_backtest.BacktestConfig(
             calibration_stride=2,
             rolling_calibration_count=2,
@@ -111,6 +127,8 @@ class ImpliedVolatilityBacktestTests(unittest.TestCase):
         daily: pd.DataFrame,
         terms_by_code: dict[str, ManualModelTerms],
     ) -> pd.DataFrame:
+        """Run the backtest with deterministic solver and pricing doubles."""
+
         with (
             patch.object(iv_backtest, "_solve_row", side_effect=_fake_solve),
             patch.object(iv_backtest, "_price", side_effect=_fake_price),
@@ -286,7 +304,11 @@ class ImpliedVolatilityBacktestTests(unittest.TestCase):
 
 
 class TermsSnapshotTests(unittest.TestCase):
+    """Verify reconstruction and validation of saved per-bond assumptions."""
+
     def _summary(self) -> pd.DataFrame:
+        """Return the minimum valid saved-terms snapshot."""
+
         return pd.DataFrame(
             {
                 "bond_code": ["A"],

@@ -21,6 +21,8 @@ from implied_volatility import ImpliedVolatilityResult, solve_implied_volatility
 
 @dataclass(frozen=True)
 class BacktestConfig:
+    """File locations, IV calibration cadence, and validation thresholds."""
+
     input_csv: Path = Path(
         "output/classic/batch/all_9/daily_tracking_all.csv"
     )
@@ -97,6 +99,8 @@ def load_terms_snapshot(summary: pd.DataFrame) -> dict[str, ManualModelTerms]:
         raise ValueError(f"comparison summary contains duplicate bonds: {codes}")
 
     def finite_value(row: object, column: str) -> float:
+        """Read one required finite scalar from a saved terms row."""
+
         value = float(getattr(row, column))
         if not np.isfinite(value):
             code = str(getattr(row, "bond_code"))
@@ -155,6 +159,8 @@ def _price(
     *,
     with_call: bool,
 ) -> float:
+    """Reprice one saved row with a supplied volatility and engine variant."""
+
     return price_convertible_with_terms(
         stock_price=float(getattr(row, "stock_close")),
         conversion_price=float(getattr(row, "K")),
@@ -178,6 +184,8 @@ def _solve_row(
     *,
     with_call: bool,
 ) -> ImpliedVolatilityResult:
+    """Invert one row's market price under the selected call treatment."""
+
     return solve_implied_volatility(
         lambda sigma: _price(
             row,
@@ -196,6 +204,8 @@ def _solver_fields(
     prefix: str,
     result: ImpliedVolatilityResult,
 ) -> dict[str, object]:
+    """Flatten a solver result into prefixed columns for CSV output."""
+
     return {
         f"{prefix}_{key}": value
         for key, value in asdict(result).items()
@@ -208,6 +218,8 @@ def _forecast_sigmas(
     historical_sigma: float,
     config: BacktestConfig,
 ) -> tuple[dict[str, float], float]:
+    """Build leakage-safe forecasts from calibrations available before today."""
+
     recent = [
         (observed_position, sigma)
         for observed_position, sigma in history
@@ -246,6 +258,8 @@ def _forecast_sigmas(
 
 
 def _required_daily(daily: pd.DataFrame) -> pd.DataFrame:
+    """Return complete, unique bond/date rows in deterministic order."""
+
     required = [
         "date",
         "bond_code",
@@ -552,6 +566,8 @@ def summarize_backtest(
 
 
 def _matched_baseline(model: str) -> str:
+    """Return the historical-volatility baseline for a forecast column."""
+
     if model.endswith("_with_call"):
         return "baseline_price_with_call"
     if model.endswith("_no_call"):
@@ -885,6 +901,8 @@ def calibration_diagnostics(backtest: pd.DataFrame) -> pd.DataFrame:
 
 
 def main() -> None:
+    """Run the default offline IV backtest and persist reproducible outputs."""
+
     config = BacktestConfig()
     daily = pd.read_csv(config.input_csv)
     bond_metadata = pd.read_csv(config.summary_csv)
