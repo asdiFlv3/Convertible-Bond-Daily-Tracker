@@ -150,6 +150,21 @@ configuration snapshot.  Same-day implied volatility remains a diagnostic,
 not forecast evidence; only the lagged columns should be used to judge whether
 the volatility input addresses the persistent gap.
 
+To regenerate the mentor-ready figures from the saved CSV outputs, run:
+
+```text
+python scripts/implied_volatility_plots.py
+```
+
+The figures are written to `output/diagnostics/implied_volatility/figures/`.
+The nine bonds are split into debt-like, balanced, and equity-like groups.
+Each bond uses its own linear price axis so high-price equity-like bonds do not
+flatten the lower-price series; the original four-bond sample is marked with
+a dagger.  Full-sample charts use the end-of-sample bond style, while
+validation charts freeze style at the end of the selection period to avoid
+look-ahead.  The same folder also contains validation MAPE, IV-solver
+coverage, and accuracy-versus-smoothness summary charts.
+
 Batch runs additionally write percentage-based cross-bond rankings,
 `comparison_summary_by_style.csv`, and `failures.csv`.  The style summary uses
 the latest conversion parity and the configured blend thresholds to classify
