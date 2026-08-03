@@ -93,6 +93,7 @@ def crr_convertible_basic(
     put_parity_trigger: float,
     face_value: float,
     put_price: float,
+    diagnostics: dict[str, float | bool] | None = None,
 ) -> float:
     """Price one convertible bond with the notebook's simplified CRR model.
 
@@ -163,6 +164,14 @@ def crr_convertible_basic(
     )
     value = np.maximum(terminal_parity, maturity_redemption_price)
 
+    eligible_conversion_nodes = 0
+    chosen_conversion_nodes = 0
+    earliest_conversion_years = np.nan
+    root_continuation = np.nan
+    root_parity = np.nan
+    root_conversion_eligible = False
+    root_conversion_optimal = False
+
     for layer in range(steps - 1, -1, -1):
         node = np.arange(layer + 1)
         current_stock = stock_price * up**node * down ** (layer - node)
@@ -192,9 +201,21 @@ def crr_convertible_basic(
             + interest_per_step
         )
 
+        if layer == 0:
+            root_continuation = float(continuation[0])
+            root_parity = float(current_parity[0])
+
         if current_time >= conversion_wait_years:
             # The investor chooses between holding and converting.  The call
             # approximation then forces conversion when parity exceeds C1.
+            conversion_optimal = current_parity >= continuation
+            eligible_conversion_nodes += len(current_parity)
+            chosen_conversion_nodes += int(conversion_optimal.sum())
+            if conversion_optimal.any():
+                earliest_conversion_years = current_time
+            if layer == 0:
+                root_conversion_eligible = True
+                root_conversion_optimal = bool(conversion_optimal[0])
             value = np.maximum(continuation, current_parity)
             hit_call = current_parity > call_parity_trigger
             value[hit_call] = current_parity[hit_call]
@@ -211,4 +232,22 @@ def crr_convertible_basic(
                 put_price,
             )
 
+    if diagnostics is not None:
+        diagnostics.update(
+            {
+                "root_continuation": root_continuation,
+                "root_parity": root_parity,
+                "root_continuation_minus_parity": (
+                    root_continuation - root_parity
+                ),
+                "root_conversion_eligible": root_conversion_eligible,
+                "root_conversion_optimal": root_conversion_optimal,
+                "conversion_node_share": (
+                    chosen_conversion_nodes / eligible_conversion_nodes
+                    if eligible_conversion_nodes
+                    else np.nan
+                ),
+                "earliest_conversion_years": earliest_conversion_years,
+            }
+        )
     return float(value[0])

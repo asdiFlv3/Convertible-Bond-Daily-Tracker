@@ -118,6 +118,7 @@ def build_daily_tracking_table(
 
     model_prices: list[float] = []
     no_call_prices: list[float] = []
+    no_call_diagnostics: list[dict[str, float | bool]] = []
     errors: list[str] = []
 
     for row in daily.itertuples(index=False):
@@ -141,6 +142,7 @@ def build_daily_tracking_table(
         except ValueError as exc:
             model_prices.append(np.nan)
             no_call_prices.append(np.nan)
+            no_call_diagnostics.append({})
             errors.append(f"numeric_conversion_error: {exc}")
             continue
 
@@ -150,16 +152,19 @@ def build_daily_tracking_table(
         if not np.isfinite(sigma_used) or sigma_used <= 0:
             model_prices.append(np.nan)
             no_call_prices.append(np.nan)
+            no_call_diagnostics.append({})
             errors.append("insufficient_volatility_history")
             continue
         if not np.isfinite(conversion_price) or conversion_price <= 0:
             model_prices.append(np.nan)
             no_call_prices.append(np.nan)
+            no_call_diagnostics.append({})
             errors.append("invalid_historical_conversion_price")
             continue
         if not np.isfinite(coupon_used) or coupon_used < 0:
             model_prices.append(np.nan)
             no_call_prices.append(np.nan)
+            no_call_diagnostics.append({})
             errors.append("invalid_historical_coupon_rate")
             continue
 
@@ -171,6 +176,7 @@ def build_daily_tracking_table(
 
             def price_with_call_threshold(
                 call_parity_trigger: float,
+                diagnostics: dict[str, float | bool] | None = None,
             ) -> float:
                 """Price this already-normalized row with one call threshold."""
 
@@ -193,6 +199,7 @@ def build_daily_tracking_table(
                     put_parity_trigger=manual_terms.put_parity_trigger,
                     face_value=FACE_VALUE,
                     put_price=manual_terms.put_price,
+                    diagnostics=diagnostics,
                 )
 
             price = price_with_call_threshold(
@@ -202,17 +209,34 @@ def build_daily_tracking_table(
             # Re-price the same row with an unreachable call threshold.  The
             # difference isolates the impact of the model's call cutoff while
             # holding all market data and other assumptions constant.
-            price_no_call = price_with_call_threshold(float("inf"))
+            diagnostic_row: dict[str, float | bool] = {}
+            price_no_call = price_with_call_threshold(
+                float("inf"),
+                diagnostic_row,
+            )
             model_prices.append(price)
             no_call_prices.append(price_no_call)
+            no_call_diagnostics.append(diagnostic_row)
             errors.append("")
         except Exception as exc:
             model_prices.append(np.nan)
             no_call_prices.append(np.nan)
+            no_call_diagnostics.append({})
             errors.append(f"{type(exc).__name__}: {exc}")
 
     daily["theoretical_price"] = model_prices
     daily["theoretical_price_no_call"] = no_call_prices
+    diagnostic_frame = pd.DataFrame(no_call_diagnostics, index=daily.index)
+    for column in (
+        "root_continuation",
+        "root_parity",
+        "root_continuation_minus_parity",
+        "root_conversion_eligible",
+        "root_conversion_optimal",
+        "conversion_node_share",
+        "earliest_conversion_years",
+    ):
+        daily[f"no_call_{column}"] = diagnostic_frame.get(column)
     daily["call_impact"] = (
         daily["theoretical_price_no_call"]
         - daily["theoretical_price"]

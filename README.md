@@ -110,6 +110,18 @@ The CSV contains the aligned market inputs, model inputs, theoretical price,
 no-call theoretical price, estimated call impact, and a `pricing_error` column
 for dates that could not be valued.
 
+To investigate a persistent model/market gap without querying Wind again, run:
+
+```text
+python scripts/gap_diagnostics.py
+```
+
+The offline diagnostics use the saved nine-bond batch table and write
+volatility/credit-spread sensitivities, no-call implied volatility, conversion
+exercise diagnostics, and generic downward-reset trigger proximity to
+`output/diagnostics/gap/`.  The sensitivity grids are sampled across the full
+date range to keep this research-only run separate from normal batch cost.
+
 Batch runs additionally write percentage-based cross-bond rankings,
 `comparison_summary_by_style.csv`, and `failures.csv`.  The style summary uses
 the latest conversion parity and the configured blend thresholds to classify
