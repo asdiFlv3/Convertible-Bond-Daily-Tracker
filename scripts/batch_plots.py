@@ -21,6 +21,34 @@ import numpy as np
 import pandas as pd
 
 
+# A fixed high-contrast palette keeps the same bond visually identifiable
+# across every batch chart.  The colors are deliberately not sampled from
+# adjacent positions in ``tab20``, whose light/dark pairs are too similar when
+# many bonds are shown together.
+DISTINCT_BOND_COLORS = [
+    "#0072B2",  # blue
+    "#D55E00",  # vermilion
+    "#009E73",  # bluish green
+    "#CC79A7",  # reddish purple
+    "#E69F00",  # orange
+    "#6F42C1",  # violet
+    "#00A6D6",  # cyan
+    "#8C564B",  # brown
+    "#4D4D4D",  # charcoal
+    "#A6CE39",  # yellow green
+]
+
+
+def _bond_color_map(codes: list[object]) -> dict[object, str]:
+    """Assign stable, distinct colors in sorted bond-code order."""
+
+    ordered_codes = sorted(dict.fromkeys(codes), key=str)
+    return {
+        code: DISTINCT_BOND_COLORS[index % len(DISTINCT_BOND_COLORS)]
+        for index, code in enumerate(ordered_codes)
+    }
+
+
 def _save_latest_gap_chart(
     summary: pd.DataFrame,
     path: Path,
@@ -99,6 +127,7 @@ def _save_gap_history_chart(
         .nlargest(max_bonds, "absolute_latest_gap")["bond_code"]
         .tolist()
     )
+    color_by_code = _bond_color_map(selected_codes)
     plot_data = daily.loc[
         daily["bond_code"].isin(selected_codes)
     ]
@@ -112,6 +141,7 @@ def _save_gap_history_chart(
             valid["date"],
             valid["gap_pct"] * 100,
             label=str(code),
+            color=color_by_code[code],
         )
     axis.axhline(0, color="black", linewidth=0.8)
     axis.set_xlabel("Date")
@@ -144,16 +174,16 @@ def _save_price_comparison_chart(
         return
 
     codes = valid["bond_code"].drop_duplicates().tolist()
-    color_map = plt.get_cmap("tab20")
+    color_by_code = _bond_color_map(codes)
     figure, axis = plt.subplots(
         figsize=(15, max(7, 0.25 * len(codes) + 6)),
     )
-    for index, code in enumerate(codes):
+    for code in codes:
         group = (
             valid.loc[valid["bond_code"].eq(code)]
             .sort_values("date")
         )
-        color = color_map(index % color_map.N)
+        color = color_by_code[code]
         axis.plot(
             group["date"],
             group["bond_close"],

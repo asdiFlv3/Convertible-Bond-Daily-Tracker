@@ -518,42 +518,43 @@ def main() -> None:
              put_parity_trigger=70.0,
              put_price=110.0,
          ),
-        BondSpec(
-             bond_code="123258.SZ",
-             call_parity_trigger=130.0,
-             put_parity_trigger=70.0,
-             put_price=113.0,
-         ),
-        BondSpec(
-            bond_code="111022.SH",
-            call_parity_trigger=130.0,
-            put_parity_trigger=70.0,
-            put_price=113.0,
-        ),
+        #BondSpec(
+             #bond_code="123258.SZ",
+             #call_parity_trigger=130.0,
+             #put_parity_trigger=70.0,
+             #put_price=113.0,
+         #),
+
+        #BondSpec(
+            #bond_code="111022.SH",
+            #call_parity_trigger=130.0,
+            #put_parity_trigger=70.0,
+            #put_price=113.0,
+        #),
         BondSpec(
             bond_code="123255.SZ",
             call_parity_trigger=130.0,
             put_parity_trigger=70.0,
             put_price=110.0,
         ),
-        BondSpec(
-            bond_code="118056.SH",
-            call_parity_trigger=130.0,
-            put_parity_trigger=70.0,
-            put_price=112.0,
-        ),
-        BondSpec(
-            bond_code="123263.SZ",
-            call_parity_trigger=130.0,
-            put_parity_trigger=70.0,
-            put_price=110.0,
-        ),
-        BondSpec(
-            bond_code="118062.SH",
-            call_parity_trigger=130.0,
-            put_parity_trigger=70.0,
-            put_price=112.0,
-        ),
+        #BondSpec(
+            #bond_code="118056.SH",
+            #call_parity_trigger=130.0,
+            #put_parity_trigger=70.0,
+            #put_price=112.0,
+        #),
+        #BondSpec(
+            #bond_code="123263.SZ",
+            #call_parity_trigger=130.0,
+            #put_parity_trigger=70.0,
+            #put_price=110.0,
+        #),
+        #BondSpec(
+        #    bond_code="118062.SH",
+        #    call_parity_trigger=130.0,
+        #    put_parity_trigger=70.0,
+        #    put_price=112.0,
+        #),
     ]
 
     batch_config = BatchConfig(

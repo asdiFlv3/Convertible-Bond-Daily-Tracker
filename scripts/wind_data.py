@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields
 from pathlib import Path
+import re
 from typing import Any, NoReturn, TypeAlias, cast
 
 import numpy as np
@@ -165,6 +166,36 @@ def normalize_wind_code(code: str) -> str:
             f"Wind代码必须包含市场后缀（例如 123117.SZ），收到：{code!r}"
         )
     return value
+
+
+def resolve_a_share_underlying_code(value: object) -> str:
+    """Select the unique mainland A-share code from Wind ``bclc`` output.
+
+    Wind can return every listing associated with an issuer, for example
+    ``839473.NQ,0668.HK,300866.SZ``.  Convertible bonds in this pipeline are
+    priced against their mainland A-share, so passing the full string to WSD
+    would accidentally create a multi-security response.
+    """
+
+    raw = str(value).strip().upper()
+    tokens = [
+        token
+        for token in re.split(r"[,;|\s]+", raw)
+        if token
+    ]
+    candidates = list(
+        dict.fromkeys(
+            token
+            for token in tokens
+            if re.fullmatch(r"\d{6}\.(?:SH|SZ)", token)
+        )
+    )
+    if len(candidates) != 1:
+        raise ValueError(
+            "Wind bclc must contain exactly one mainland A-share code: "
+            f"raw={raw!r}, candidates={candidates}"
+        )
+    return normalize_wind_code(candidates[0])
 
 
 def start_wind() -> None:
@@ -353,7 +384,7 @@ def _load_snapshot_metadata(
         wind_fields.maturity_redemption_price,
     ]
     snapshot = _wind_wss(bond_code, snapshot_fields, end)
-    stock_code = normalize_wind_code(
+    stock_code = resolve_a_share_underlying_code(
         _value_by_field(snapshot, wind_fields.underlying_code)
     )
 
