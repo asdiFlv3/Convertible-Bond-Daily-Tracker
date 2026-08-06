@@ -29,6 +29,8 @@ def summarize_backtest(
     calendar_split = min(max(calendar_split, 1), len(calendar_dates) - 1)
     validation_start_date = pd.Timestamp(calendar_dates[calendar_split])
 
+    # The split is global rather than per bond, so every model is judged over
+    # the same market regime even when individual histories start later.
     rows: list[dict[str, object]] = []
     for code, group in backtest.groupby("bond_code", sort=False):
         ordered = group.sort_values("date")
@@ -54,6 +56,8 @@ def summarize_backtest(
                     usable_market
                     & subset[list(forecast_models)].notna().all(axis=1)
                 )
+                # Baseline and all IV variants share this intersection. 
+                # This prevents a sparse forecast from looking better by skipping dates that are difficult to price.
                 model_columns = (
                     BASELINE_COLUMNS_BY_ENGINE[engine],
                     *forecast_models,

@@ -12,14 +12,23 @@ from pipeline_paths import DEFAULT_OUTPUT_ROOT, RunManifest, load_current_run
 class BacktestConfig:
     """File locations, IV calibration cadence, and validation thresholds."""
 
+    # Paths are optional only to make programmatic construction convenient;
+    # run_iv_stage validates that the three stage paths are present.
     input_csv: Path | None = None
     summary_csv: Path | None = None
     output_dir: Path | None = None
+
+    # Information set used to create out-of-sample daily sigma forecasts.
     calibration_stride: int = 5
     rolling_calibration_count: int = 4
     max_iv_age_trading_days: int = 10
     shrinkage_weight: float = 0.5
+
+    # Model selection is performed before this trailing calendar fraction.
     validation_fraction: float = 0.4
+
+    # Root-finding controls. The grid establishes a reliable bracket before
+    # bisection, so it is part of the saved reproducibility configuration.
     sigma_grid: tuple[float, ...] = (
         0.01,
         0.10,
@@ -33,6 +42,8 @@ class BacktestConfig:
     )
     solver_iterations: int = 24
     solver_price_tolerance: float = 0.01
+
+    # Candidate forecasts below this common-sample coverage are ineligible.
     minimum_forecast_coverage: float = 0.80
 
     @classmethod

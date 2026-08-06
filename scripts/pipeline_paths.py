@@ -22,6 +22,8 @@ RUN_MANIFEST_FILENAME = "run_manifest.json"
 MANIFEST_SCHEMA_VERSION = 1
 _BOND_CODE_PATTERN = re.compile(r"^[A-Z0-9]+\.[A-Z0-9]+$")
 _RUN_ID_PATTERN = re.compile(r"^[A-Z0-9_]+$")
+# Keep ordinary runs recognizable in Explorer. Larger baskets use a stable
+# digest so every downstream path remains comfortably below Windows limits.
 _MAX_READABLE_RUN_ID_LENGTH = 64
 
 
@@ -94,6 +96,8 @@ class PipelinePaths:
             raise PipelineManifestError(f"invalid run_id: {run_id!r}")
         return cls(Path(output_root), normalized)
 
+    # Directory layout. Stages own separate subdirectories so rerunning one
+    # stage cannot overwrite the inputs produced by another stage.
     @property
     def runs_dir(self) -> Path:
         return self.output_root / "runs"
@@ -118,6 +122,8 @@ class PipelinePaths:
     def figures_dir(self) -> Path:
         return self.run_dir / "figures"
 
+    # Discovery metadata lives outside stage directories: the run manifest is
+    # immutable run metadata, while current_run.json is the movable pointer.
     @property
     def run_manifest_path(self) -> Path:
         return self.run_dir / RUN_MANIFEST_FILENAME
@@ -126,6 +132,7 @@ class PipelinePaths:
     def current_run_path(self) -> Path:
         return self.output_root / CURRENT_RUN_FILENAME
 
+    # Batch outputs consumed by the IV stage.
     @property
     def batch_daily_csv(self) -> Path:
         return self.batch_dir / "daily_tracking_all.csv"
@@ -134,6 +141,7 @@ class PipelinePaths:
     def batch_summary_csv(self) -> Path:
         return self.batch_dir / "comparison_summary.csv"
 
+    # IV outputs consumed by gap correction and plotting.
     @property
     def iv_daily_csv(self) -> Path:
         return self.iv_dir / "implied_volatility_backtest_daily.csv"
@@ -154,6 +162,7 @@ class PipelinePaths:
     def iv_config_csv(self) -> Path:
         return self.iv_dir / "implied_volatility_backtest_config.csv"
 
+    # Only the cross-method gap summaries are required by the figure suite.
     @property
     def gap_head_to_head_csv(self) -> Path:
         return self.gap_dir / "iv_vs_gap_head_to_head.csv"
@@ -251,6 +260,8 @@ def save_run_manifest(manifest: RunManifest) -> None:
     """Save a run manifest and update current only for a usable batch."""
 
     _write_json_atomic(manifest.paths.run_manifest_path, manifest.to_dict())
+    # A completely failed Wind request is still recorded for diagnosis, but it
+    # must not replace the last usable run seen by offline stages.
     if manifest.successful_bond_codes:
         pointer = {
             "schema_version": MANIFEST_SCHEMA_VERSION,
@@ -352,6 +363,8 @@ def load_current_run(
         root,
         pointer.get("manifest_path"),
     )
+    # Validate both documents independently, then bind them by run_id. This
+    # catches stale or manually copied pointers before any CSV is consumed.
     manifest = load_run_manifest(manifest_path, root)
     if pointer.get("run_id") != manifest.paths.run_id:
         raise PipelineManifestError(

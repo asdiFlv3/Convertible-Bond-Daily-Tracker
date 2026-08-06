@@ -39,6 +39,8 @@ def run_iv_stage(
     )
     daily = pd.read_csv(config.input_csv)
     bond_metadata = pd.read_csv(config.summary_csv)
+    # When invoked from current_run.json, 
+    # membership checks prevent a partial or copied CSV from being combined with another run's terms snapshot.
     if expected_bond_codes is not None:
         if "bond_code" not in daily.columns:
             raise KeyError(
@@ -59,6 +61,8 @@ def run_iv_stage(
             str(config.summary_csv),
         )
     terms_by_code = load_terms_snapshot(bond_metadata)
+    # Compute first, then persist the complete result set. Downstream stages
+    # require all of these artifacts and fail early if one is missing.
     backtest = run_backtest(daily, terms_by_code, config)
     summary = summarize_backtest(backtest, config)
     selected = select_models(summary, config)

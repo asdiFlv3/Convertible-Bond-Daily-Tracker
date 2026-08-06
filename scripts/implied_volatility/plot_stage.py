@@ -31,6 +31,8 @@ def generate_plots(config: PlotConfig) -> list[Path]:
         gap_headline,
     ) = _load_inputs(config)
 
+    # Keep filenames and return order aligned with the intended review flow:
+    # daily behavior, IV diagnostics, then IV-versus-gap comparison.
     output_paths: list[Path] = []
     for style in STYLE_ORDER:
         iv_path = config.output_dir / f"02_validation_market_vs_iv_{style}.png"

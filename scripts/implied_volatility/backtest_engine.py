@@ -34,6 +34,7 @@ BASELINE_COLUMNS_BY_ENGINE = {
     "no_call": "baseline_price_no_call",
 }
 
+
 def _price(
     row: object,
     terms: ManualModelTerms,
@@ -232,6 +233,8 @@ def run_backtest(
         if code not in terms_by_code:
             raise KeyError(f"terms snapshot missing for {code}")
         terms = terms_by_code[code]
+        # Call/no-call engines are calibrated independently; sharing their
+        # histories would make the comparison internally inconsistent.
         call_history: list[tuple[int, float]] = []
         no_call_history: list[tuple[int, float]] = []
 
@@ -267,6 +270,8 @@ def run_backtest(
                 "iv_no_call_age_trading_days": no_call_age,
             }
             current_parity = 100 * float(row.stock_close) / float(row.K)
+            # Style is descriptive metadata based on the terms snapshot. It is
+            # not allowed to change the forecast or model-selection procedure.
             if current_parity < terms.debt_equity_blend_low:
                 row_output["bond_style"] = "debt"
             elif current_parity > terms.debt_equity_blend_high:
@@ -275,6 +280,8 @@ def run_backtest(
                 row_output["bond_style"] = "balanced"
 
             cache: dict[tuple[bool, float], tuple[float, str]] = {}
+            # Median and shrunk forecasts can coincide. Cache equal sigmas to
+            # avoid repeating an expensive tree valuation for the same row.
             for with_call, forecasts, suffix in (
                 (True, call_forecast, "with_call"),
                 (False, no_call_forecast, "no_call"),

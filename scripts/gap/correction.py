@@ -27,6 +27,7 @@ HEAD_TO_HEAD_MODEL_ORDER = (
     "ewma_gap",
 )
 
+
 def _require_columns(
     frame: pd.DataFrame,
     columns: list[str],
@@ -149,7 +150,11 @@ def add_gap_correction_forecasts(
     daily: pd.DataFrame,
     config: GapCorrectionConfig,
 ) -> pd.DataFrame:
-    """Add latest-gap and EWMA-gap prices without using the current-day gap."""
+    """Add latest-gap and EWMA-gap prices without using the current-day gap.
+
+    The signed gap is ``baseline - market``. A forecast therefore subtracts
+    the stored gap from today's baseline to estimate today's market price.
+    """
 
     _validate_config(config)
     result = _ordered_daily(daily)
@@ -166,6 +171,8 @@ def add_gap_correction_forecasts(
             result[column] = np.nan
 
     for _, group in result.groupby("bond_code", sort=False):
+        # Each bond and engine owns an independent online state. Only a
+        # scheduled calibration row is allowed to update that state.
         states = {
             engine: {
                 "latest": np.nan,
@@ -233,6 +240,8 @@ def add_gap_correction_forecasts(
                         or position - int(observed_position)
                         > config.max_gap_age_trading_days
                     )
+                    # After a long gap in observations, restart EWMA rather
+                    # than blending a fresh signal with an expired state.
                     if stale or not _finite(state["ewma"]):
                         new_ewma = float(realized_gap)
                     else:

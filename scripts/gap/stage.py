@@ -43,6 +43,9 @@ def run_gap_stage(
     iv_summary = pd.read_csv(config.iv_summary_csv)
     selected = pd.read_csv(config.iv_selected_csv)
     iv_config = pd.read_csv(config.iv_config_csv)
+    # The manifest verifies expected bonds; the recorded IV output directory
+    # below additionally catches tables copied from another run with the same
+    # apparent schema.
     if expected_bond_codes is not None:
         if "bond_code" not in daily.columns:
             raise KeyError(
@@ -63,6 +66,8 @@ def run_gap_stage(
             )
     validate_matched_iv_rules(iv_config, config)
 
+    # Reuse IV's frozen cutoff and selection rather than optimizing a new split
+    # after seeing gap performance.
     cutoff = validation_start_date(iv_summary)
     backtest = add_gap_correction_forecasts(daily, config)
     gap_summary = summarize_gap_corrections(backtest, cutoff)

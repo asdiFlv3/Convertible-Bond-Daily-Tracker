@@ -54,6 +54,8 @@ def _metric_values(
             np.flatnonzero(comparison.to_numpy()),
             index=gap_pct.index,
         )
+        # Smoothness uses only adjacent source rows. Missing forecast days do
+        # not get bridged into a misleading multi-day "daily" change.
         consecutive = comparison_positions.diff().eq(1)
         gap_change = gap_pct.diff().abs()
         change_mae = gap_change.loc[consecutive].mean()
@@ -176,6 +178,8 @@ def summarize_head_to_head(
 
     rows: list[dict[str, object]] = []
     eligible = selected.loc[selected["selection_passed"].map(_is_true)]
+    # Qualification is frozen by IV calibration results. Gap performance never
+    # decides which bonds enter this comparison.
     for selection in eligible.itertuples(index=False):
         code = str(selection.bond_code)
         engine = str(selection.engine)

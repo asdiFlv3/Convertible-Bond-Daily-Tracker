@@ -29,6 +29,8 @@ def select_models(
     calibration_all = summary.loc[
         summary["segment"].eq("calibration")
     ].copy()
+    # Validation rows are lookup-only: 
+    # no validation metric participates in coverage gating or candidate ranking.
     validation = summary.loc[summary["segment"].eq("validation")].copy()
     candidates = calibration_all.loc[
         calibration_all["model"].isin(forecast_models)
@@ -115,6 +117,8 @@ def select_models(
             )
             continue
 
+        # Prefer forecasts that beat their engine-matched baseline. If none do,
+        # retain the best covered candidate but mark selection as failed.
         improving = eligible.loc[
             eligible["calibration_mape_improvement"].gt(0)
         ]

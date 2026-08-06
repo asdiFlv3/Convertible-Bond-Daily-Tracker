@@ -145,11 +145,13 @@ def solve_implied_volatility(
     valid_prices = prices[valid]
     grid_min_price = float(valid_prices.min())
     grid_max_price = float(valid_prices.max())
-    # A unique IV is meaningful only on a non-decreasing price curve. Small
-    # downward moves inside the price tolerance are treated as numerical noise.
+    # A unique IV is meaningful only on a non-decreasing price curve.
+    # Small downward moves inside the price tolerance are treated as numerical noise.
     monotonic = bool(np.all(np.diff(valid_prices) >= -price_tolerance))
     errors = valid_prices - target_price
     exact = np.flatnonzero(np.abs(errors) <= price_tolerance)
+    # A sign change between adjacent grid prices is a candidate root bracket.
+    # Multiple candidates are rejected instead of selecting an arbitrary IV.
     brackets = [
         index
         for index in range(len(valid_grid) - 1)
@@ -209,6 +211,8 @@ def solve_implied_volatility(
     high_price = float(valid_prices[bracket + 1])
     middle_sigma = (low_sigma + high_sigma) / 2
     middle_price = np.nan
+    # Monotonicity established above lets price determine which half retains the target. 
+    # Bisection is slower than Newton but does not require a stable numerical vega from the CRR model.
     for iteration in range(1, max_iterations + 1):
         middle_sigma = (low_sigma + high_sigma) / 2
         try:
