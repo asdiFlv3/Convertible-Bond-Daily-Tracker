@@ -23,6 +23,12 @@ import pandas as pd
 
 from batch_plots import save_batch_charts
 from crr_model import ManualModelTerms
+from pipeline_paths import (
+    PipelinePaths,
+    RunManifest,
+    build_run_manifest,
+    save_run_manifest,
+)
 from tracking import build_daily_tracking_table
 from wind_data import (
     TrackingConfig,
@@ -427,10 +433,16 @@ def run_batch_comparison(
 def save_batch_result(
     result: BatchResult,
     batch_config: BatchConfig,
+    run_manifest: RunManifest | None = None,
 ) -> None:
     """Write tables and comparison charts to ``batch_config.output_dir``."""
 
     output_dir = batch_config.output_dir
+    if run_manifest is not None and output_dir != run_manifest.paths.batch_dir:
+        raise ValueError(
+            "batch output directory does not match the run manifest: "
+            f"{output_dir} != {run_manifest.paths.batch_dir}"
+        )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     result.daily.to_csv(
@@ -479,6 +491,10 @@ def save_batch_result(
         output_dir,
         batch_config.max_bonds_in_history_chart,
     )
+    # Publish the run only after every batch table and chart has been saved.
+    # An all-failed run keeps its own manifest but does not replace current.
+    if run_manifest is not None:
+        save_run_manifest(run_manifest)
 
 
 def main() -> None:
@@ -520,50 +536,52 @@ def main() -> None:
              put_parity_trigger=70.0,
              put_price=110.0,
          ),
-        #BondSpec(
-             #bond_code="123258.SZ",
-             #call_parity_trigger=130.0,
-             #put_parity_trigger=70.0,
-             #put_price=113.0,
-         #),
+        BondSpec(
+             bond_code="123258.SZ",
+             call_parity_trigger=130.0,
+             put_parity_trigger=70.0,
+             put_price=113.0,
+         ),
 
-        #BondSpec(
-            #bond_code="111022.SH",
-            #call_parity_trigger=130.0,
-            #put_parity_trigger=70.0,
-            #put_price=113.0,
-        #),
+        BondSpec(
+            bond_code="111022.SH",
+            call_parity_trigger=130.0,
+            put_parity_trigger=70.0,
+            put_price=113.0,
+        ),
         BondSpec(
             bond_code="123255.SZ",
             call_parity_trigger=130.0,
             put_parity_trigger=70.0,
             put_price=110.0,
         ),
-        #BondSpec(
-            #bond_code="118056.SH",
-            #call_parity_trigger=130.0,
-            #put_parity_trigger=70.0,
-            #put_price=112.0,
-        #),
-        #BondSpec(
-            #bond_code="123263.SZ",
-            #call_parity_trigger=130.0,
-            #put_parity_trigger=70.0,
-            #put_price=110.0,
-        #),
-        #BondSpec(
-        #    bond_code="118062.SH",
-        #    call_parity_trigger=130.0,
-        #    put_parity_trigger=70.0,
-        #    put_price=112.0,
-        #),
+        BondSpec(
+            bond_code="118056.SH",
+            call_parity_trigger=130.0,
+            put_parity_trigger=70.0,
+            put_price=112.0,
+        ),
+        BondSpec(
+            bond_code="123263.SZ",
+            call_parity_trigger=130.0,
+            put_parity_trigger=70.0,
+            put_price=110.0,
+        ),
+        BondSpec(
+            bond_code="118062.SH",
+            call_parity_trigger=130.0,
+            put_parity_trigger=70.0,
+            put_price=112.0,
+        ),
     ]
 
+    requested_codes = [spec.bond_code for spec in bond_specs]
+    pipeline_paths = PipelinePaths.from_bond_codes(requested_codes)
     batch_config = BatchConfig(
         start="2025-07-21",
         end="2026-07-21",
         volatility_window=60,
-        output_dir=Path("output/batch"),
+        output_dir=pipeline_paths.batch_dir,
     )
     base_terms = ManualModelTerms(
         risk_free_rate=0.02,
@@ -584,7 +602,23 @@ def main() -> None:
         wind_fields,
         base_terms,
     )
-    save_batch_result(result, batch_config)
+    successful_codes = (
+        result.daily["bond_code"].dropna().astype(str).unique().tolist()
+        if not result.daily.empty
+        else []
+    )
+    failed_codes = (
+        result.failures["bond_code"].dropna().astype(str).tolist()
+        if not result.failures.empty
+        else []
+    )
+    run_manifest = build_run_manifest(
+        pipeline_paths,
+        requested_codes,
+        successful_codes,
+        failed_codes,
+    )
+    save_batch_result(result, batch_config, run_manifest)
 
     print("Batch comparison summary:")
     if result.summary.empty:
@@ -608,6 +642,10 @@ def main() -> None:
         print(result.failures.to_string(index=False))
 
     print(f"\nSaved batch outputs to: {batch_config.output_dir}")
+    if run_manifest.successful_bond_codes:
+        print(f"Current pipeline run: {run_manifest.paths.run_id}")
+    else:
+        print("All bonds failed; the previous current pipeline run was kept.")
 
 
 if __name__ == "__main__":

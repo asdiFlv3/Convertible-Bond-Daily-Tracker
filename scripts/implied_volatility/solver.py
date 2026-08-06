@@ -280,3 +280,5 @@ def solve_implied_volatility(
         lower_price=low_price,
         upper_price=high_price,
     )
+
+

@@ -14,6 +14,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import implied_volatility_backtest as iv_backtest
+import implied_volatility.backtest_engine as iv_engine
 from crr_model import ManualModelTerms
 from implied_volatility import ImpliedVolatilityResult
 
@@ -130,8 +131,8 @@ class ImpliedVolatilityBacktestTests(unittest.TestCase):
         """Run the backtest with deterministic solver and pricing doubles."""
 
         with (
-            patch.object(iv_backtest, "_solve_row", side_effect=_fake_solve),
-            patch.object(iv_backtest, "_price", side_effect=_fake_price),
+            patch.object(iv_engine, "_solve_row", side_effect=_fake_solve),
+            patch.object(iv_engine, "_price", side_effect=_fake_price),
         ):
             return iv_backtest.run_backtest(
                 daily,
@@ -196,9 +197,9 @@ class ImpliedVolatilityBacktestTests(unittest.TestCase):
     def test_forecast_pricing_error_is_recorded_without_stopping(self) -> None:
         daily = _daily("A", 100.0, days=3)
         with (
-            patch.object(iv_backtest, "_solve_row", side_effect=_fake_solve),
+            patch.object(iv_engine, "_solve_row", side_effect=_fake_solve),
             patch.object(
-                iv_backtest,
+                iv_engine,
                 "_price",
                 side_effect=ValueError("bad forecast point"),
             ),
@@ -226,8 +227,8 @@ class ImpliedVolatilityBacktestTests(unittest.TestCase):
             minimum_forecast_coverage=0.0,
         )
         with (
-            patch.object(iv_backtest, "_solve_row", side_effect=_fake_solve),
-            patch.object(iv_backtest, "_price", side_effect=_fake_price),
+            patch.object(iv_engine, "_solve_row", side_effect=_fake_solve),
+            patch.object(iv_engine, "_price", side_effect=_fake_price),
         ):
             result = iv_backtest.run_backtest(
                 _daily("A", 100.0, days=4),
