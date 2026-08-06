@@ -60,7 +60,7 @@ def run_id_for_bond_codes(codes: Iterable[str]) -> str:
     readable = "__".join(code.replace(".", "_") for code in normalized)
     if len(readable) <= _MAX_READABLE_RUN_ID_LENGTH:
         return readable
-    digest = sha256("|".join(normalized).encode("utf-8")).hexdigest()[:12]
+    digest = sha256("|".join(normalized).encode("utf-8")).hexdigest()[:6]
     return f"{len(normalized)}_BONDS_{digest.upper()}"
 
 
