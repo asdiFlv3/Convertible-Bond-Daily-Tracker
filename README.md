@@ -46,6 +46,7 @@ latest value repeated backward through history.
 | `scripts/batch_compare_crr.py` | Compare multiple bonds | Yes |
 | `scripts/gap_diagnostics.py` | Analyze saved pricing gaps and sensitivities | No |
 | `scripts/implied_volatility_backtest.py` | Backtest lagged implied-volatility forecasts | No |
+| `scripts/gap_correction_backtest.py` | Compare lagged gap/EWMA corrections with IV | No |
 | `scripts/implied_volatility_plots.py` | Regenerate IV backtest figures | No |
 
 The two Wind-backed entry points contain example configuration blocks rather
@@ -63,6 +64,7 @@ scripts/
 ├── gap_diagnostics.py              # Offline sensitivity diagnostics
 ├── implied_volatility.py           # Generic IV root solver
 ├── implied_volatility_backtest.py  # Leakage-safe IV forecasts
+├── gap_correction_backtest.py      # Leakage-safe low-cost gap benchmark
 └── implied_volatility_plots.py     # Offline charts
 tests/                               # Standard-library unittest suite
 output/                              # Generated CSV and PNG artifacts
@@ -83,6 +85,22 @@ directories; one bond failure does not discard successful batch results.
 The IV backtest prevents same-day leakage: a calibration first becomes
 available on the next usable trading day. Model selection uses the earlier
 calendar segment, while the final segment remains out-of-sample validation.
+
+The gap-correction benchmark reuses the saved IV calendar and information
+rules.  It observes the CRR-minus-market gap on the same scheduled dates,
+starts using it at t+1, and expires it after ten usable trading days.  Its
+latest-gap and EWMA-gap prices require no new CRR solve.  Run the offline
+sequence as:
+
+```text
+python scripts/implied_volatility_backtest.py
+python scripts/gap_correction_backtest.py
+python scripts/implied_volatility_plots.py
+```
+
+Gap correction is a market-anchored quote-tracking benchmark, not an
+independent fair-value estimate: past convertible-bond market prices enter the
+correction through past observed gaps.
 
 ## Model scope
 

@@ -1,10 +1,8 @@
-"""Generate mentor-ready charts from saved batch and IV backtest outputs.
-
-The script is fully offline.  It preserves the original market-versus-CRR
-comparison, but separates the nine bonds into debt-like, balanced and
-equity-like groups so high-price equity-like bonds do not flatten the lower
-price series.  Current implied-volatility results use only the common
-validation window and keep coverage failures visible.
+"""
+The script is fully offline.  It separates the nine bonds into debt-like,
+balanced and equity-like groups so high-price equity-like bonds do not flatten
+the lower price series.  Current implied-volatility results use only the
+common validation window and keep coverage failures visible.
 
 Run from the repository root::
 
@@ -32,6 +30,8 @@ from matplotlib.patches import Patch
 MARKET_COLOR = "#202124"
 BASELINE_COLOR = "#7A7A7A"
 IV_COLOR = "#0072B2"
+GAP_LATEST_COLOR = "#CC79A7"
+GAP_EWMA_COLOR = "#E69F00"
 CALL_COLOR = "#D55E00"
 NO_CALL_COLOR = "#009E73"
 GRID_COLOR = "#D9DEE5"
@@ -48,12 +48,6 @@ ORIGINAL_SAMPLE_MARKER = "\N{DAGGER}"
 class PlotConfig:
     """Locations of saved analysis tables and generated figure files."""
 
-    classic_daily_csv: Path = Path(
-        "output/classic/batch/all_9/daily_tracking_all.csv"
-    )
-    classic_summary_csv: Path = Path(
-        "output/classic/batch/all_9/comparison_summary.csv"
-    )
     original_four_summary_csv: Path = Path(
         "output/classic/batch/comparison_summary.csv"
     )
@@ -72,6 +66,12 @@ class PlotConfig:
     iv_calibration_csv: Path = Path(
         "output/diagnostics/implied_volatility/"
         "implied_volatility_calibration_diagnostics.csv"
+    )
+    gap_head_to_head_csv: Path = Path(
+        "output/diagnostics/gap_correction/iv_vs_gap_head_to_head.csv"
+    )
+    gap_headline_csv: Path = Path(
+        "output/diagnostics/gap_correction/iv_vs_gap_headline.csv"
     )
     output_dir: Path = Path(
         "output/diagnostics/implied_volatility/figures"
@@ -129,9 +129,9 @@ def _save_figure(figure: plt.Figure, path: Path) -> None:
 def _load_inputs(
     config: PlotConfig,
 ) -> tuple[
-    pd.DataFrame,
-    pd.DataFrame,
     set[str],
+    pd.DataFrame,
+    pd.DataFrame,
     pd.DataFrame,
     pd.DataFrame,
     pd.DataFrame,
@@ -139,29 +139,14 @@ def _load_inputs(
 ]:
     """Load and validate every saved table needed by the figure suite."""
 
-    classic_daily = pd.read_csv(config.classic_daily_csv)
-    classic_summary = pd.read_csv(config.classic_summary_csv)
     original_summary = pd.read_csv(config.original_four_summary_csv)
     iv_daily = pd.read_csv(config.iv_daily_csv)
     iv_summary = pd.read_csv(config.iv_summary_csv)
     iv_selected = pd.read_csv(config.iv_selected_csv)
     iv_calibration = pd.read_csv(config.iv_calibration_csv)
+    gap_head_to_head = pd.read_csv(config.gap_head_to_head_csv)
+    gap_headline = pd.read_csv(config.gap_headline_csv)
 
-    _require_columns(
-        classic_daily,
-        [
-            "date",
-            "bond_code",
-            "bond_close",
-            "theoretical_price",
-        ],
-        str(config.classic_daily_csv),
-    )
-    _require_columns(
-        classic_summary,
-        ["bond_code", "bond_style", "mape"],
-        str(config.classic_summary_csv),
-    )
     _require_columns(
         original_summary,
         ["bond_code"],
@@ -210,8 +195,34 @@ def _load_inputs(
         ["bond_code", "engine", "solution_share"],
         str(config.iv_calibration_csv),
     )
+    _require_columns(
+        gap_head_to_head,
+        [
+            "bond_code",
+            "engine",
+            "segment",
+            "model",
+            "mape",
+            "comparison_coverage",
+            "iv_validation_passed",
+        ],
+        str(config.gap_head_to_head_csv),
+    )
+    _require_columns(
+        gap_headline,
+        [
+            "engine",
+            "segment",
+            "model",
+            "eligible_bond_count",
+            "iv_validation_passed_bond_count",
+            "mean_mape",
+            "mean_abs_mean_gap_pct",
+            "mean_gap_pct_change_mae",
+        ],
+        str(config.gap_headline_csv),
+    )
 
-    classic_daily["date"] = pd.to_datetime(classic_daily["date"])
     iv_daily["date"] = pd.to_datetime(iv_daily["date"])
     original_codes = set(original_summary["bond_code"].astype(str))
     if len(original_codes) != 4:
@@ -220,134 +231,14 @@ def _load_inputs(
             f"found {sorted(original_codes)}"
         )
     return (
-        classic_daily,
-        classic_summary,
         original_codes,
         iv_daily,
         iv_summary,
         iv_selected,
         iv_calibration,
+        gap_head_to_head,
+        gap_headline,
     )
-
-
-def _style_codes(
-    summary: pd.DataFrame,
-    style: str,
-) -> list[str]:
-    """Return sorted bond codes in one end-of-sample style group."""
-
-    return (
-        summary.loc[summary["bond_style"].eq(style), "bond_code"]
-        .astype(str)
-        .sort_values()
-        .tolist()
-    )
-
-
-def save_original_group_price_chart(
-    daily: pd.DataFrame,
-    summary: pd.DataFrame,
-    original_codes: set[str],
-    style: str,
-    path: Path,
-) -> None:
-    """Plot one small multiple per bond for an original CRR style group."""
-
-    codes = _style_codes(summary, style)
-    if not codes:
-        return
-    valid = daily.loc[daily["bond_code"].isin(codes)].dropna(
-        subset=["date", "bond_close", "theoretical_price"]
-    )
-    if valid.empty:
-        return
-
-    figure, flat_axes = _small_multiple_figure(len(codes))
-    metrics = summary.set_index("bond_code")
-    for axis, code in zip(flat_axes, codes, strict=False):
-        group = valid.loc[valid["bond_code"].eq(code)].sort_values("date")
-        if group.empty:
-            continue
-        marker = ORIGINAL_SAMPLE_MARKER if code in original_codes else ""
-        axis.plot(
-            group["date"],
-            group["bond_close"],
-            color=MARKET_COLOR,
-            linewidth=2.0,
-            label="Market",
-        )
-        axis.plot(
-            group["date"],
-            group["theoretical_price"],
-            color=CALL_COLOR,
-            linestyle="--",
-            linewidth=2.0,
-            label="Original CRR",
-        )
-        axis.fill_between(
-            group["date"],
-            group["bond_close"],
-            group["theoretical_price"],
-            color=CALL_COLOR,
-            alpha=0.08,
-        )
-        mape = float(metrics.loc[code, "mape"])
-        axis.set_title(
-            f"{code}{marker} | original MAPE {mape:.1%}",
-            fontsize=11,
-            pad=9,
-        )
-        axis.set_xlabel("Date")
-        axis.set_ylabel("Price")
-        _style_axis(axis)
-        _format_date_axis(axis)
-
-    figure.suptitle(
-        f"{STYLE_LABELS[style]} bonds: full-sample market vs original CRR "
-        "(simplified call)",
-        fontsize=15,
-        fontweight="bold",
-        y=0.995,
-    )
-    figure.legend(
-        handles=[
-            Line2D(
-                [0],
-                [0],
-                color=MARKET_COLOR,
-                linewidth=2.0,
-                label="Market",
-            ),
-            Line2D(
-                [0],
-                [0],
-                color=CALL_COLOR,
-                linestyle="--",
-                linewidth=2.0,
-                label="Original CRR",
-            ),
-        ],
-        loc="upper center",
-        bbox_to_anchor=(0.5, 0.955),
-        ncol=2,
-        frameon=False,
-    )
-    style_date = valid["date"].max()
-    footer = (
-        "Each bond has its own linear y-axis; shading is the pricing gap. "
-        f"Group uses conversion parity at full-sample end "
-        f"({style_date:%Y-%m-%d}). {ORIGINAL_SAMPLE_MARKER} Original "
-        "four-bond sample."
-    )
-    figure.text(
-        0.01,
-        0.005,
-        footer,
-        fontsize=9,
-        color="#4B5563",
-    )
-    figure.tight_layout(rect=(0, 0.03, 1, 0.91))
-    _save_figure(figure, path)
 
 
 def _subplot_shape(count: int) -> tuple[int, int]:
@@ -842,33 +733,183 @@ def save_strategy_tradeoff_chart(
     _save_figure(figure, path)
 
 
+def save_iv_vs_gap_mape_chart(
+    head_to_head: pd.DataFrame,
+    path: Path,
+) -> None:
+    """Compare baseline, selected IV, and gap rules on identical dates."""
+
+    model_order = ("baseline", "selected_iv", "latest_gap", "ewma_gap")
+    model_labels = {
+        "baseline": "Historical vol",
+        "selected_iv": "Selected lagged IV",
+        "latest_gap": "Latest lagged gap",
+        "ewma_gap": "EWMA lagged gap",
+    }
+    colors = {
+        "baseline": "#A3A3A3",
+        "selected_iv": IV_COLOR,
+        "latest_gap": GAP_LATEST_COLOR,
+        "ewma_gap": GAP_EWMA_COLOR,
+    }
+    validation = head_to_head.loc[
+        head_to_head["engine"].eq("no_call")
+        & head_to_head["segment"].eq("validation")
+    ].copy()
+    pivot = validation.pivot(
+        index="bond_code",
+        columns="model",
+        values="mape",
+    ).dropna(subset=list(model_order))
+    if pivot.empty:
+        return
+    pivot = pivot.sort_values("baseline", ascending=False)
+    status = validation.drop_duplicates("bond_code").set_index("bond_code")
+    labels = [
+        (
+            f"{code}"
+            if _is_true(status.loc[code, "iv_validation_passed"])
+            else f"{code} **"
+        )
+        for code in pivot.index
+    ]
+
+    positions = np.arange(len(pivot))
+    bar_height = 0.18
+    offsets = (1.5, 0.5, -0.5, -1.5)
+    figure, axis = plt.subplots(figsize=(13, 8))
+    maximum = 0.0
+    for model, offset in zip(model_order, offsets, strict=True):
+        values = pivot[model].to_numpy() * 100
+        maximum = max(maximum, float(np.nanmax(values)))
+        bars = axis.barh(
+            positions + offset * bar_height,
+            values,
+            height=bar_height,
+            color=colors[model],
+            label=model_labels[model],
+        )
+        axis.bar_label(bars, fmt="%.1f", padding=2, fontsize=7.5)
+
+    axis.set_yticks(positions, labels)
+    axis.invert_yaxis()
+    axis.set_xlabel("Validation MAPE (%) \N{EM DASH} lower is better")
+    passed = validation.loc[
+        validation["iv_validation_passed"].map(_is_true), "bond_code"
+    ].nunique()
+    axis.set_title(
+        "Same-date validation: selected IV versus simple lagged gaps\n"
+        f"All {len(pivot)} IV selection-qualified bonds; "
+        f"{passed}/{len(pivot)} pass the IV validation gate",
+        fontsize=15,
+        fontweight="bold",
+        pad=14,
+    )
+    axis.legend(loc="lower right")
+    _style_axis(axis)
+    axis.grid(axis="x", color=GRID_COLOR, linewidth=0.8, alpha=0.75)
+    axis.grid(axis="y", visible=False)
+    axis.set_xlim(0, maximum * 1.18)
+    figure.text(
+        0.01,
+        0.01,
+        "** IV passed selection but validation coverage is below 80%.  "
+        "Each four-bar group uses exactly the same bond-days.\n"
+        "Gap observations use the IV calibration schedule, start at t+1, "
+        "and expire after 10 usable trading days.",
+        fontsize=9,
+        color="#4B5563",
+    )
+    figure.subplots_adjust(bottom=0.15)
+    _save_figure(figure, path)
+
+
+def save_iv_vs_gap_tradeoff_chart(
+    headline: pd.DataFrame,
+    path: Path,
+) -> None:
+    """Show accuracy and smoothness for the full pre-qualified sample."""
+
+    model_order = ("baseline", "selected_iv", "latest_gap", "ewma_gap")
+    model_labels = {
+        "baseline": "Historical vol",
+        "selected_iv": "Selected lagged IV",
+        "latest_gap": "Latest lagged gap",
+        "ewma_gap": "EWMA lagged gap",
+    }
+    colors = ["#A3A3A3", IV_COLOR, GAP_LATEST_COLOR, GAP_EWMA_COLOR]
+    validation = headline.loc[
+        headline["engine"].eq("no_call")
+        & headline["segment"].eq("validation")
+    ].set_index("model")
+    if not set(model_order).issubset(validation.index):
+        return
+    validation = validation.reindex(model_order)
+    metrics = (
+        ("mean_mape", "Mean validation MAPE (%)"),
+        (
+            "mean_abs_mean_gap_pct",
+            "Mean |average signed gap| (%)",
+        ),
+        (
+            "mean_gap_pct_change_mae",
+            "Adjacent-day gap change MAE (%)",
+        ),
+    )
+    labels = [model_labels[model] for model in model_order]
+    positions = np.arange(len(model_order))
+    figure, axes = plt.subplots(1, 3, figsize=(16, 6), sharey=True)
+    for axis, (column, title) in zip(axes, metrics, strict=True):
+        values = validation[column].to_numpy(dtype=float) * 100
+        bars = axis.barh(positions, values, color=colors, height=0.62)
+        axis.set_yticks(positions, labels)
+        axis.invert_yaxis()
+        axis.set_title(title, fontsize=11, pad=10)
+        axis.set_xlabel("Lower is better")
+        _style_axis(axis)
+        axis.grid(axis="x", color=GRID_COLOR, linewidth=0.8, alpha=0.75)
+        axis.grid(axis="y", visible=False)
+        axis.bar_label(bars, fmt="%.2f", padding=3, fontsize=8.5)
+        axis.set_xlim(0, max(values) * 1.24)
+
+    eligible = int(validation["eligible_bond_count"].iloc[0])
+    passed = int(validation["iv_validation_passed_bond_count"].iloc[0])
+    figure.suptitle(
+        "Accuracy and smoothness: IV versus low-cost gap correction",
+        fontsize=15,
+        fontweight="bold",
+        y=0.99,
+    )
+    figure.text(
+        0.01,
+        0.01,
+        f"Equal-weighted across all {eligible} IV selection-qualified bonds; "
+        f"{passed}/{eligible} pass the IV validation gate. No validation "
+        "failure is removed.\n"
+        "All four methods use a per-bond common validation sample. "
+        "Level bias is |each bond's average signed gap|, not daily gap MAE.",
+        fontsize=9,
+        color="#4B5563",
+    )
+    figure.tight_layout(rect=(0, 0.07, 1, 0.93))
+    _save_figure(figure, path)
+
+
 def generate_plots(config: PlotConfig) -> list[Path]:
     """Generate the complete figure suite and return paths in display order."""
 
     (
-        classic_daily,
-        classic_summary,
         original_codes,
         iv_daily,
         iv_summary,
         iv_selected,
         iv_calibration,
+        gap_head_to_head,
+        gap_headline,
     ) = _load_inputs(config)
 
     output_paths: list[Path] = []
     for style in STYLE_ORDER:
-        original_path = (
-            config.output_dir / f"01_original_market_vs_crr_{style}.png"
-        )
-        save_original_group_price_chart(
-            classic_daily,
-            classic_summary,
-            original_codes,
-            style,
-            original_path,
-        )
-        output_paths.append(original_path)
-
         iv_path = config.output_dir / f"02_validation_market_vs_iv_{style}.png"
         save_iv_group_price_chart(
             iv_daily,
@@ -895,6 +936,16 @@ def generate_plots(config: PlotConfig) -> list[Path]:
     tradeoff_path = config.output_dir / "05_accuracy_smoothness_tradeoff.png"
     save_strategy_tradeoff_chart(iv_summary, iv_selected, tradeoff_path)
     output_paths.append(tradeoff_path)
+
+    gap_mape_path = config.output_dir / "06_validation_iv_vs_gap_mape.png"
+    save_iv_vs_gap_mape_chart(gap_head_to_head, gap_mape_path)
+    output_paths.append(gap_mape_path)
+
+    gap_tradeoff_path = (
+        config.output_dir / "07_iv_vs_gap_accuracy_smoothness.png"
+    )
+    save_iv_vs_gap_tradeoff_chart(gap_headline, gap_tradeoff_path)
+    output_paths.append(gap_tradeoff_path)
     return output_paths
 
 
@@ -902,7 +953,7 @@ def main() -> None:
     """Generate figures from default paths and print their destinations."""
 
     paths = generate_plots(PlotConfig())
-    print("Saved implied-volatility figures:")
+    print("Saved diagnostic figures:")
     for path in paths:
         print(f"- {path}")
 
